@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Odia OCR Application</title>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/2.1.5/tesseract.min.js'></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #fileInput, #convertBtn, #advancedSettings { margin-bottom: 10px; }
+        #output { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; }
+        label { display: block; margin-bottom: 5px; }
+        #progressBar { width: 100%; background-color: #f0f0f0; }
+        #progressBar div { height: 30px; background-color: #4CAF50; text-align: center; line-height: 30px; color: white; }
+    </style>
+</head>
+<body>
+    <h1>Odia OCR Application</h1>
+    <input type="file" id="fileInput" accept=".pdf">
+    <div id="advancedSettings">
+        <h3>Advanced Settings</h3>
+        <label>
+            Tesseract Language:
+            <input type="text" id="lang" value="ori">
+        </label>
+        <label>
+            PSM Mode:
+            <input type="number" id="psm" value="3" min="0" max="13">
+        </label>
+        <label>
+            Start Page:
+            <input type="number" id="startPage" value="1" min="1">
+        </label>
+        <label>
+            End Page:
+            <input type="number" id="endPage" value="">
+        </label>
+        <label>
+            Color Image Filter:
+            <select id="colorImageFilter">
+                <option value="FlateEncode">FlateEncode</option>
+                <option value="DCTDecode">DCTDecode</option>
+            </select>
+        </label>
+        <label>
+            Gray Image Filter:
+            <select id="grayImageFilter">
+                <option value="FlateEncode">FlateEncode</option>
+                <option value="DCTDecode">DCTDecode</option>
+            </select>
+        </label>
+        <label>
+            Mono Image Filter:
+            <select id="monoImageFilter">
+                <option value="CCITTFaxDecode">CCITTFaxDecode</option>
+                <option value="JBIG2Decode">JBIG2Decode</option>
+            </select>
+        </label>
+    </div>
+    <button id="convertBtn">Convert to Text</button>
+    <div id="progressBar" style="display:none;">
+        <div id="progressBarFill"></div>
+    </div>
+    <div id="output"></div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const convertBtn = document.getElementById('convertBtn');
+        const output = document.getElementById('output');
+        const lang = document.getElementById('lang');
+        const psm = document.getElementById('psm');
+        const startPage = document.getElementById('startPage');
+        const endPage = document.getElementById('endPage');
+        const colorImageFilter = document.getElementById('colorImageFilter');
+        const grayImageFilter = document.getElementById('grayImageFilter');
+        const monoImageFilter = document.getElementById('monoImageFilter');
+        const progressBar = document.getElementById('progressBar');
+        const progressBarFill = document.getElementById('progressBarFill');
+
+        // Initialize Tesseract worker
+        const worker = Tesseract.createWorker();
+
+        convertBtn.addEventListener('click', async () => {
+            if (!fileInput.files[0]) {
+                alert('Please select a PDF file');
+                return;
+            }
+
+            output.textContent = 'Processing...';
+            progressBar.style.display = 'block';
+            progressBarFill.style.width = '0%';
+            progressBarFill.textContent = '0%';
+
+            try {
+                const pdfFile = fileInput.files[0];
+                const pdfData = await pdfFile.arrayBuffer();
+                
+                const loadingTask = pdfjsLib.getDocument({
+                    data: pdfData,
+                    params: {
+                        colorImageFilter: colorImageFilter.value,
+                        grayImageFilter: grayImageFilter.value,
+                        monoImageFilter: monoImageFilter.value,
+                    }
+                });
+                
+                const pdf = await loadingTask.promise;
+                let text = '';
+
+                const start = parseInt(startPage.value) || 1;
+                const end = Math.min(parseInt(endPage.value) || pdf.numPages, pdf.numPages);
+                const totalPages = end - start + 1;
+
+                // Initialize Tesseract worker
+                await worker.load();
+                await worker.loadLanguage(lang.value);
+                await worker.initialize(lang.value);
+                await worker.setParameters({
+                    tessedit_pageseg_mode: parseInt(psm.value),
+                });
+
+                for (let i = start; i <= end; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+                    const result = await worker.recognize(canvas);
+                    text += `Page ${i}:\n${result.data.text}\n\n`;
+
+                    // Update progress bar
+                    const progress = Math.round(((i - start + 1) / totalPages) * 100);
+                    progressBarFill.style.width = `${progress}%`;
+                    progressBarFill.textContent = `${progress}% (Page ${i} of ${end})`;
+                }
+
+                await worker.terminate();
+
+                output.textContent = text;
+
+                // Create and download text file
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'ocr_output.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+            } finally {
+                progressBar.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

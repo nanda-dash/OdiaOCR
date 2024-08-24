@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multilingual OCR Web Application</title>
+    <script src='https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js'></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #imagePreview {
+            max-width: 100%;
+            margin-top: 20px;
+        }
+        #result {
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+        #loadingSpinner {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .language-select {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Multilingual OCR Web Application</h1>
+    <input type="file" id="fileInput" accept="image/*">
+    <br><br>
+    <div class="language-select">
+        <label for="languageSelect">Select Language:</label>
+        <select id="languageSelect">
+            <option value="ori">Odia</option>
+            <option value="hin">Hindi</option>
+            <option value="eng">English</option>
+        </select>
+    </div>
+    <br>
+    <label>
+        <input type="checkbox" id="grayscaleCheckbox"> Convert to Grayscale
+    </label>
+    <br><br>
+    <button id="processButton" disabled>Process Image</button>
+    <br><br>
+    <div id="cropContainer" style="display: none;">
+        <button id="cropButton">Crop Image</button>
+        <button id="resetCropButton">Reset Crop</button>
+    </div>
+    <br>
+    <img id="imagePreview" style="display: none;">
+    <div id="loadingSpinner">
+        <div class="spinner"></div>
+        <p>Processing image, please wait...</p>
+    </div>
+    <div id="result"></div>
+
+    <script>
+        let cropper;
+        let originalImage;
+
+        document.getElementById('fileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    originalImage = e.target.result;
+                    document.getElementById('imagePreview').src = originalImage;
+                    document.getElementById('imagePreview').style.display = 'block';
+                    document.getElementById('cropContainer').style.display = 'block';
+                    document.getElementById('processButton').disabled = false;
+                    
+                    if (cropper) {
+                        cropper.destroy();
+                    }
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById('cropButton').addEventListener('click', function() {
+            if (cropper) {
+                cropper.destroy();
+            }
+            cropper = new Cropper(document.getElementById('imagePreview'), {
+                aspectRatio: NaN,
+                viewMode: 1,
+            });
+        });
+
+        document.getElementById('resetCropButton').addEventListener('click', function() {
+            if (cropper) {
+                cropper.destroy();
+                cropper = null;
+            }
+            document.getElementById('imagePreview').src = originalImage;
+        });
+
+        document.getElementById('processButton').addEventListener('click', async function() {
+            const grayscale = document.getElementById('grayscaleCheckbox').checked;
+            const language = document.getElementById('languageSelect').value;
+            let imageData = originalImage;
+
+            if (cropper) {
+                const croppedCanvas = cropper.getCroppedCanvas();
+                imageData = croppedCanvas.toDataURL();
+            }
+
+            if (grayscale) {
+                imageData = await convertToGrayscale(imageData);
+            }
+
+            document.getElementById('loadingSpinner').style.display = 'block';
+            document.getElementById('result').textContent = '';
+
+            Tesseract.recognize(
+                imageData,
+                language,
+                { logger: m => console.log(m) }
+            ).then(({ data: { text } }) => {
+                document.getElementById('loadingSpinner').style.display = 'none';
+                document.getElementById('result').textContent = text;
+                document.getElementById('imagePreview').src = imageData;
+            }).catch(error => {
+                document.getElementById('loadingSpinner').style.display = 'none';
+                document.getElementById('result').textContent = 'Error: ' + error.message;
+            });
+        });
+
+        async function convertToGrayscale(imageData) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                        data[i] = avg;
+                        data[i + 1] = avg;
+                        data[i + 2] = avg;
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    resolve(canvas.toDataURL());
+                };
+                img.src = imageData;
+            });
+        }
+    </script>
+</body>
+</html>

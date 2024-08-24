@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Odia OCR Application</title>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/2.1.5/tesseract.min.js'></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #fileInput, #convertBtn, #advancedSettings { margin-bottom: 10px; }
+        #output { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Odia OCR Application</h1>
+    <input type="file" id="fileInput" accept=".pdf">
+    <button id="convertBtn">Convert to Text</button>
+    <div id="advancedSettings">
+        <h3>Advanced Settings</h3>
+        <label>
+            Tesseract Language:
+            <input type="text" id="lang" value="ori">
+        </label>
+        <label>
+            PSM Mode:
+            <input type="number" id="psm" value="3" min="0" max="13">
+        </label>
+    </div>
+    <div id="output"></div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const convertBtn = document.getElementById('convertBtn');
+        const output = document.getElementById('output');
+        const lang = document.getElementById('lang');
+        const psm = document.getElementById('psm');
+
+        convertBtn.addEventListener('click', async () => {
+            if (!fileInput.files[0]) {
+                alert('Please select a PDF file');
+                return;
+            }
+
+            output.textContent = 'Processing...';
+
+            try {
+                const pdfFile = fileInput.files[0];
+                const pdfData = await pdfFile.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                let text = '';
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+                    const result = await Tesseract.recognize(canvas, lang.value, {
+                        tessedit_pageseg_mode: parseInt(psm.value),
+                    });
+
+                    text += result.data.text + '\n\n';
+                }
+
+                output.textContent = text;
+
+                // Create and download text file
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'ocr_output.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>
